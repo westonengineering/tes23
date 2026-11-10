@@ -1,0 +1,17 @@
+Message 0x90 Status (Channel C)
+Byte	Bits	Desc	Type	Enum
+2	0	Enable
+	2-1	Mode		0=Off,1=Run,2=Hold
+	7-3	Reserved
+3	7-0	Level
+4-5		Speed	uint16
+
+Message 0x92 Config (Channel C)
+Byte	Bits	Desc	Type
+2-5		Gain	float
+6		Flags	uint8
+
+Message 0xA0 Motor (Channel D)
+Byte	Bits	Desc	Type
+2-3		Target	int16
+4		Cmd	uint8

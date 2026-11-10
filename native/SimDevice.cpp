@@ -60,13 +60,32 @@ bool SimDevice::Write(const uint8_t* data, uint32_t n) {
     if (dropEvery != 0 && index % dropEvery == 0) return true;
 
     std::vector<uint8_t> reply(d->rxLen + 4u, 0);
-    std::memcpy(reply.data(), data, (std::min)(d->rxLen, d->txLen));
-    reply[0] = d->rxId;
+    bool separateLayouts = false;
     for (int f = 0; f < d->fieldCount; ++f)
-        if (!(d->fields[f].dir & DirFrom)) {
-            const FieldDesc& fd = d->fields[f];
-            if (fd.byteOffset + fd.byteCount <= d->rxLen) SetRaw(reply.data(), fd, 0);
+        if (d->fields[f].dir == DirFrom) separateLayouts = true;
+
+    if (separateLayouts) {
+        // Each returned field takes the value of the sent field with the same name.
+        for (int f = 0; f < d->fieldCount; ++f) {
+            const FieldDesc& from = d->fields[f];
+            if (!(from.dir & DirFrom)) continue;
+            for (int t = 0; t < d->fieldCount; ++t) {
+                const FieldDesc& to = d->fields[t];
+                if ((to.dir & DirTo) && std::strcmp(to.name, from.name) == 0) {
+                    SetRaw(reply.data(), from, GetRaw(data, to));
+                    break;
+                }
+            }
         }
+    } else {
+        std::memcpy(reply.data(), data, (std::min)(d->rxLen, d->txLen));
+        for (int f = 0; f < d->fieldCount; ++f)
+            if (!(d->fields[f].dir & DirFrom)) {
+                const FieldDesc& fd = d->fields[f];
+                if (fd.byteOffset + fd.byteCount <= d->rxLen) SetRaw(reply.data(), fd, 0);
+            }
+    }
+    reply[0] = d->rxId;
     const uint32_t rc = m_crc.Compute(reply.data() + from, d->rxLen - from);
     for (int i = 0; i < 4; ++i)
         reply[d->rxLen + (m_schema.crc.bigEndianOnWire ? 3 - i : i)] = static_cast<uint8_t>(rc >> (8 * i));

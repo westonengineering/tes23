@@ -60,14 +60,36 @@ static std::vector<uint8_t> RandomImage(const MsgDesc& m) {
     return image;
 }
 
+static bool SeparateLayouts(const MsgDesc& m) {
+    for (int f = 0; f < m.fieldCount; ++f)
+        if (m.fields[f].dir == DirFrom) return true;
+    return false;
+}
+
 // What the device should return for a given sent image.
 static std::vector<uint8_t> ExpectedReply(const MsgDesc& m, const std::vector<uint8_t>& tx) {
-    std::vector<uint8_t> e(tx.begin(), tx.begin() + m.rxLen);
-    e[0] = m.rxId;
-    for (int f = 0; f < m.fieldCount; ++f) {
-        const FieldDesc& d = m.fields[f];
-        if (!(d.dir & DirFrom) && d.byteOffset + d.byteCount <= m.rxLen) SetRaw(e.data(), d, 0);
+    std::vector<uint8_t> e(m.rxLen, 0);
+    if (SeparateLayouts(m)) {
+        // Different layouts: a returned field mirrors the sent field of the same name.
+        for (int f = 0; f < m.fieldCount; ++f) {
+            const FieldDesc& from = m.fields[f];
+            if (!(from.dir & DirFrom)) continue;
+            for (int t = 0; t < m.fieldCount; ++t) {
+                const FieldDesc& to = m.fields[t];
+                if ((to.dir & DirTo) && std::strcmp(to.name, from.name) == 0) {
+                    SetRaw(e.data(), from, GetRaw(tx.data(), to));
+                    break;
+                }
+            }
+        }
+    } else {
+        std::copy(tx.begin(), tx.begin() + (std::min)(m.rxLen, m.txLen), e.begin());
+        for (int f = 0; f < m.fieldCount; ++f) {
+            const FieldDesc& d = m.fields[f];
+            if (!(d.dir & DirFrom) && d.byteOffset + d.byteCount <= m.rxLen) SetRaw(e.data(), d, 0);
+        }
     }
+    e[0] = m.rxId;
     return e;
 }
 
@@ -100,7 +122,7 @@ struct Rig {
 
 static void Dump(FILE* f, const char* name, const MsgDesc& m, const std::vector<uint8_t>& tx, const uint8_t* rx, size_t rxBytes) {
     if (!f) return;
-    fprintf(f, "%s %d %d ", name, m.txLen, m.rxLen);
+    fprintf(f, "%s %d %d %d ", name, m.txLen, m.rxLen, (!SeparateLayouts(m) && m.id == m.rxId) ? 1 : 0);
     for (uint8_t b : tx) fprintf(f, "%02x", b);
     fputc(' ', f);
     for (size_t i = 0; i < rxBytes; ++i) fprintf(f, "%02x", rx[i]);

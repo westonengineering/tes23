@@ -1,0 +1,18 @@
+Message 0x91 Status Reply (Channel C)
+Byte	Bits	Desc	Type	Enum
+2	7-0	Level
+3	1-0	Mode		0=Off,1=Run,2=Hold,3=Fault
+	7-2	Reserved
+4-5		Speed	uint16
+6		Temp	uint8
+7	7-0	Reserved
+
+Message 0x93 Config Reply (Channel C)
+Byte	Bits	Desc	Type
+2-5		Gain	float
+
+Message 0xA1 Motor (Channel D)
+Byte	Bits	Desc	Type
+2-3		Target	int16
+4-5		Actual	int16
+6		Fault	uint8

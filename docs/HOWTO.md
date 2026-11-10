@@ -67,6 +67,57 @@ fields with a `Dir` column containing `to`, or list them in the source entry:
 The reply ends at the last field it returns. Fields keep the same byte positions
 in both directions.
 
+### Separate send and receive ICDs
+
+Use this when the reply doesn't line up with what was sent: different fields,
+positions, lengths or message ID. Give one file for each direction:
+
+```json
+"sources": [ { "tx": "send.txt", "rx": "receive.txt" } ]
+```
+
+The table format is the same in both files, and either can be `.txt` or `.docx`.
+`Reserved` rows in the receive file count toward the reply length.
+
+**One message.** A single table in each file always pairs up, whatever its heading
+says. If the files have no heading lines, set the details in the source entry:
+
+```json
+{ "tx": "send.txt", "rx": "receive.txt", "channel": "C", "id": "0x90", "rx_id": "0x91", "name": "Status" }
+```
+
+`rx_id` is optional and defaults to the same value as `id`.
+
+**Several messages.** Put each message in its own table, with a heading such as
+`Message 0x90 Status (Channel C)` above every table in both files. Each send table
+is matched with a receive table by the same ID, and then by the same name. Words like
+Tx, Rx, Send and Reply are ignored in names, so `Status Reply` matches `Status`.
+
+When IDs and names don't match, say which goes with which. List any message
+the device never answers under `no_response`:
+
+```json
+{ "tx": "send.txt", "rx": "receive.txt",
+  "pairs": { "0x10": "0x20", "0x12": "0x22" },
+  "no_response": [ "0x30" ] }
+```
+
+If any table is left without a partner, generation stops and lists them.
+
+In code nothing changes, and a field can have the same name in both directions at
+different positions:
+
+```csharp
+d.ToC.Status.Level = 0x5A;               // byte 3 of the send layout
+byte level = d.FromC.Status.Level;       // byte 2 of the receive layout
+```
+
+If an enum has the same name in both directions, its types are named
+`C_Status_Mode_To` and `C_Status_Mode_From`, because their values can differ.
+
+Every send must have exactly one expected reply, or none. Messages the device
+sends on its own, without being asked, aren't supported.
+
 **Other optional table columns:** `Type` (bool, uint8..64, int8..64, float, double,
 enum), `Scale`, `Offset`, `Unit`, `Default`, `Enum` (`0=Off,1=On`).
 

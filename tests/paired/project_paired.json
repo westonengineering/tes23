@@ -1,0 +1,14 @@
+{
+  "_comment": "Test only. Send and receive ICDs with different layouts, lengths and IDs, several tables per file.",
+  "byte_base": 1,
+  "endianness": "little",
+  "crc": {
+    "poly": "0x04C11DB7", "init": "0xFFFFFFFF", "xorout": "0xFFFFFFFF",
+    "reflect_in": true, "reflect_out": true, "byte_order": "little", "covers_type": true
+  },
+  "channels": {
+    "C": { "baud": 115200, "period_us": 10000, "window_us": 1000, "rx_timeout_us": 8000, "trailer_ff": false, "rs485_echo": false },
+    "D": { "baud": 115200, "period_us": 10000, "window_us": 1000, "rx_timeout_us": 8000, "trailer_ff": false, "rs485_echo": false }
+  },
+  "sources": [ { "tx": "tx.txt", "rx": "rx.txt" } ]
+}

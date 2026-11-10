@@ -32,6 +32,7 @@ period, window, CRC, byte order). A source can be:
 | `.docx` | Every table with Byte, Bits and Desc columns is a message. |
 | `.txt` / `.tsv` | The table selected in Word and pasted into Notepad. Use it if a Word file parses badly. |
 | `.json` | Written by hand. See `icd\DemoChannelD.json`. |
+| `"tx"` + `"rx"` files | Separate send and receive ICDs whose layouts, lengths and IDs differ. See `docs\HOWTO.md`. |
 
 Word and text sources give the message ID, name and channel in the paragraph
 above the table (`Message 0x90 Status (Channel C)`) or in the project entry:

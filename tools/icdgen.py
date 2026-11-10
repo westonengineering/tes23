@@ -22,6 +22,10 @@ Text ICDs: select the table in Word, paste it into a .txt (or .tsv) file and use
 that file as the source. Columns are separated by tabs, a blank Byte cell carries
 down from the row above, and everything else works as for a Word table. Several
 tables may be pasted into one file, each with its own header row.
+
+Separate send and receive ICDs: use { "tx": "send.txt", "rx": "receive.txt" } as
+the source. The layouts, lengths and IDs may differ. With several tables per file
+they pair by ID, then by name. Use "pairs" and "no_response" for anything else.
 """
 from __future__ import print_function, unicode_literals, division
 
@@ -357,7 +361,7 @@ def build_message(raw, project):
     base = project["byte_base"]
     endian_big = project["endianness"] == "big"
     omit = set(identifier(x, x) for x in raw.get("omit_from", []))
-    fields, reserved_end, used, names = [], 1, {}, set()
+    fields, tx_end, rx_end, used, names = [], 1, 1, {}, {1: set(), 2: set()}
 
     for item in raw["fields"]:
         desc = text_type(item.get("desc", ""))
@@ -393,16 +397,22 @@ def build_message(raw, project):
                 if other_dir & direction:
                     raise IcdError("%s overlaps '%s' at byte %d bit %d" % (fwhat, other_name, byte_at + base, bit % 8))
             used.setdefault(key, []).append((desc, direction))
-        reserved_end = max(reserved_end, offset + count)
+        if direction & 1:
+            tx_end = max(tx_end, offset + count)
+        if direction == 2:  # a from-only row, reserved or not, is part of the reply
+            rx_end = max(rx_end, offset + count)
 
         if RESERVED_RE.match(desc):
             continue
-        if pname in names:
+        # The same name may be used once in each direction.
+        bits = [b for b in (1, 2) if direction & b]
+        if any(pname in names[b] for b in bits):
             suffix = 2
-            while "%s_%d" % (pname, suffix) in names:
+            while any("%s_%d" % (pname, suffix) in names[b] for b in bits):
                 suffix += 1
             pname = "%s_%d" % (pname, suffix)
-        names.add(pname)
+        for b in bits:
+            names[b].add(pname)
 
         kind = type_info(item.get("type"), width, item.get("enum"), fwhat)
         enum = parse_enum(item.get("enum", ""), fwhat)
@@ -429,12 +439,15 @@ def build_message(raw, project):
 
     if not fields:
         raise IcdError("%s: has no fields" % where)
-    tx_len = reserved_end
+    for f in fields:
+        shared = len([o for o in fields if o["name"] == f["name"]]) > 1
+        f["type_name"] = f["name"] + ("_To" if f["dir"] == 1 else "_From") if shared else f["name"]
+    tx_len = tx_end
     if "tx_len" in raw:
         tx_len = max(tx_len, parse_int(raw["tx_len"], where + " tx_len"))
     has_response = bool(raw.get("has_response", True))
     from_end = [f["offset"] + f["count"] for f in fields if f["dir"] & 2]
-    rx_len = max(from_end) if from_end else 1
+    rx_len = max(from_end + [rx_end])
     if "rx_len" in raw:
         requested = parse_int(raw["rx_len"], where + " rx_len") - base + 1
         if requested < rx_len:
@@ -449,9 +462,135 @@ def build_message(raw, project):
     }
 
 
+DIRECTION_WORDS = re.compile(r"\b(tx|rx|send|sent|receive|received|response|reply)\b", re.I)
+
+
+def clean_name(name):
+    """Drops words like Tx or Reply so a send and its reply can share one name."""
+    cleaned = " ".join(DIRECTION_WORDS.sub(" ", name or "").split())
+    return cleaned or (name or "")
+
+
+def read_tables(path):
+    """Reads a file into one entry per message. A table split over pages is rejoined."""
+    if not os.path.isfile(path):
+        raise IcdError("source file not found: %s" % path)
+    reader = read_docx if path.lower().endswith(".docx") else read_txt
+    tables, by_id = [], {}
+    for heading_lines, fields in reader(path):
+        heading = parse_heading(heading_lines)
+        msg_id = heading.get("id")
+        if msg_id is not None and msg_id in by_id:
+            by_id[msg_id]["fields"].extend(fields)
+            continue
+        table = {"id": msg_id, "name": clean_name(heading.get("name") or heading.get("title")),
+                 "channel": heading.get("channel"), "cyclic": heading.get("cyclic", True), "fields": fields}
+        tables.append(table)
+        if msg_id is not None:
+            by_id[msg_id] = table
+    return tables
+
+
+def tag_direction(fields, direction, word, path):
+    tagged = []
+    for field in fields:
+        given = DIR_MAP.get(re.sub(r"[^a-z]", "", text_type(field.get("dir", "")).lower()))
+        if given not in (3, direction):
+            raise IcdError("%s: row '%s' has Dir '%s' but this is the %s file" % (path, field.get("desc"), field.get("dir"), word))
+        item = dict(field)
+        item["dir"] = word
+        tagged.append(item)
+    return tagged
+
+
+def show_id(table):
+    return "0x%02X %s" % (table["id"], table["name"]) if table["id"] is not None else table["name"]
+
+
+def pair_tables(tx_tables, rx_tables, src, tx_path, rx_path):
+    """Returns (tx, rx) pairs. rx is None for a message declared to have no reply."""
+    if len(tx_tables) == 1 and len(rx_tables) == 1:
+        tx, rx = tx_tables[0], rx_tables[0]
+        if tx["id"] is None and "id" in src:
+            tx["id"] = parse_int(src["id"], "id")
+        if rx["id"] is None:
+            rx["id"] = parse_int(src["rx_id"], "rx_id") if "rx_id" in src else tx["id"]
+        return [(tx, rx)]
+
+    for path, tables in ((tx_path, tx_tables), (rx_path, rx_tables)):
+        for table in tables:
+            if table["id"] is None:
+                raise IcdError("%s: with several tables each one needs 0xNN in the paragraph above it" % path)
+
+    explicit = {}
+    for key, value in src.get("pairs", {}).items():
+        explicit[parse_int(key, "pairs")] = parse_int(value, "pairs")
+    no_reply = set(parse_int(x, "no_response") for x in src.get("no_response", []))
+    rx_left = list(rx_tables)
+    pairs, unmatched = [], []
+    for tx in tx_tables:
+        match = None
+        if tx["id"] in explicit:
+            match = [r for r in rx_left if r["id"] == explicit[tx["id"]]]
+            if not match:
+                raise IcdError("pairs: reply 0x%02X for 0x%02X is not in %s" % (explicit[tx["id"]], tx["id"], rx_path))
+        if not match:
+            match = [r for r in rx_left if r["id"] == tx["id"]]
+        if not match:
+            match = [r for r in rx_left if identifier(r["name"], "").lower() == identifier(tx["name"], "").lower()]
+        if len(match) > 1:
+            raise IcdError("%s matches more than one reply table. Use \"pairs\" in project.json." % show_id(tx))
+        if match:
+            rx_left.remove(match[0])
+            pairs.append((tx, match[0]))
+        elif tx["id"] in no_reply:
+            pairs.append((tx, None))
+        else:
+            unmatched.append(tx)
+    if unmatched or rx_left:
+        raise IcdError("could not pair every table. Send tables with no reply: [%s]. Reply tables with no send: [%s]. "
+                       "Give matching IDs or names, or use \"pairs\" or \"no_response\" in project.json."
+                       % (", ".join(show_id(t) for t in unmatched), ", ".join(show_id(t) for t in rx_left)))
+    return pairs
+
+
+def load_paired(src, project_dir):
+    """A source with separate send and receive ICDs whose layouts need not match."""
+    if "tx" not in src or "rx" not in src:
+        raise IcdError("a paired source needs both \"tx\" and \"rx\" files")
+    tx_path = os.path.normpath(os.path.join(project_dir, src["tx"]))
+    rx_path = os.path.normpath(os.path.join(project_dir, src["rx"]))
+    tx_tables, rx_tables = read_tables(tx_path), read_tables(rx_path)
+    pairs = pair_tables(tx_tables, rx_tables, src, tx_path, rx_path)
+    single = len(pairs) == 1
+    channel = text_type(src.get("channel", "")).upper()
+    messages = []
+    for tx, rx in pairs:
+        if tx["id"] is None:
+            raise IcdError("%s: a table has no message ID. Put 0xNN above the table or set \"id\" in project.json." % tx_path)
+        name = src.get("name") if single and src.get("name") else tx["name"] or ("Msg%02X" % tx["id"])
+        chosen = channel or tx["channel"] or (rx["channel"] if rx else None) or ""
+        for table in (tx, rx):
+            if table and table["channel"] and table["channel"] != chosen:
+                raise IcdError("%s is marked channel %s but its message uses channel %s" % (show_id(table), table["channel"], chosen))
+        fields = tag_direction(tx["fields"], 1, "to", tx_path)
+        if rx:
+            fields += tag_direction(rx["fields"], 2, "from", rx_path)
+        entry = {"name": name, "id": tx["id"], "channel": chosen, "fields": fields, "cyclic": tx["cyclic"],
+                 "rx_id": rx["id"] if rx else tx["id"], "has_response": rx is not None}
+        for key in ("tx_len", "rx_len", "cyclic"):
+            if key in src:
+                entry[key] = src[key]
+        messages.append(entry)
+    return messages
+
+
 def load_sources(project, project_dir):
     raw_messages = []
     for src in project["sources"]:
+        if "tx" in src or "rx" in src:
+            raw_messages.extend(load_paired(src, project_dir))
+            continue
         path = os.path.normpath(os.path.join(project_dir, src["file"]))
         if not os.path.isfile(path):
             raise IcdError("source file not found: %s" % path)
@@ -561,7 +700,7 @@ def cpp_value_type(msg, f):
     if f["scaled"] or f["kind"] == "float64":
         return "double"
     if f["kind"] == "enum":
-        return "%s_%s_%s" % (msg["channel"], msg["name"], f["name"])
+        return "%s_%s_%s" % (msg["channel"], msg["name"], f["type_name"])
     return int_type(f["width"], f["kind"] == "int")
 
 
@@ -578,7 +717,7 @@ def emit_cpp(messages, project, hash_value, out_dir):
         prefix = "%s_%s" % (m["channel"], m["name"])
         for f in m["fields"]:
             if f["kind"] == "enum":
-                h.append("enum class %s_%s : %s {" % (prefix, f["name"], int_type(max(f["width"], 8), False)))
+                h.append("enum class %s_%s : %s {" % (prefix, f["type_name"], int_type(max(f["width"], 8), False)))
                 for value, name in f["enum"]:
                     h.append("    %s = %d," % (name, value))
                 h.append("};")
@@ -679,7 +818,7 @@ def cs_string(text):
 
 def cs_accessor(msg, f, index, writable):
     """Returns (csharp type, getter expression, setter statement)."""
-    enum_type = "%s_%s_%s" % (msg["channel"], msg["name"], f["name"])
+    enum_type = "%s_%s_%s" % (msg["channel"], msg["name"], f["type_name"])
     if f["kind"] == "bool":
         return "bool", "GetBool(%d)" % index, "SetBool(%d, value);" % index
     if f["scaled"]:
@@ -703,7 +842,7 @@ def emit_cs(messages, project, hash_value, out_dir):
     for m in messages:
         for f in m["fields"]:
             if f["kind"] == "enum":
-                o.append("    public enum %s_%s_%s : %s" % (m["channel"], m["name"], f["name"], cs_int(max(f["width"], 8), False)))
+                o.append("    public enum %s_%s_%s : %s" % (m["channel"], m["name"], f["type_name"], cs_int(max(f["width"], 8), False)))
                 o.append("    {")
                 for value, name in f["enum"]:
                     o.append("        %s = %d," % (name, value))

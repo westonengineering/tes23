@@ -57,7 +57,12 @@ namespace IcdTestGui
         private sealed class MsgItem
         {
             public IcdMsgInfo Info;
-            public override string ToString() { return string.Format("0x{0:X2} {1}", Info.Id, Info.Name); }
+            public override string ToString()
+            {
+                return Info.RxId == Info.Id
+                    ? string.Format("0x{0:X2} {1}", Info.Id, Info.Name)
+                    : string.Format("0x{0:X2} > 0x{1:X2} {2}", Info.Id, Info.RxId, Info.Name);
+            }
         }
 
         internal MainForm(string screenshotPath)
@@ -394,15 +399,16 @@ namespace IcdTestGui
             var image = _dev.ReadImage(m.Index, IcdSide.From);
             _shownRx = image;
             var sent = _dev.ReadImage(m.Index, IcdSide.To);
+            bool separateLayouts = m.RxId != m.Id || m.Fields.Any(x => x.Direction == 2);
             foreach (DataGridViewRow row in _fromGrid.Rows)
             {
                 var f = m.Fields[(int)row.Tag];
                 row.Cells[ValueColumn].Value = meta.RxValid != 0 ? IcdBits.Format(image, f) : "-";
                 row.Cells[5].Value = meta.RxValid != 0 ? "0x" + IcdBits.GetRaw(image, f).ToString("X") : "-";
-                bool differs = meta.RxValid != 0 && f.ExistsOn(IcdSide.To) && IcdBits.GetRaw(image, f) != IcdBits.GetRaw(sent, f);
+                bool differs = meta.RxValid != 0 && !separateLayouts && f.ExistsOn(IcdSide.To) && IcdBits.GetRaw(image, f) != IcdBits.GetRaw(sent, f);
                 row.Cells[ValueColumn].Style.BackColor = differs ? Color.MistyRose : SystemColors.Window;
             }
-            _fromBits.Show(image, meta.RxValid != 0 ? sent : null);
+            _fromBits.Show(image, meta.RxValid != 0 && !separateLayouts ? sent : null); // positions only compare when layouts match
             _fromFrame.Text = meta.RxValid != 0 ? "Frame " + FrameText(image) : "No response yet";
             _rxInfo.Text = RxText(meta);
         }

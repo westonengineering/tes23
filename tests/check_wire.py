@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 """Checks raw frames dumped by IcdMatrixTests, with no project code involved.
 
-Each line is: name txLen rxLen <tx frame hex> <rx frame hex>
+Each line is: name txLen rxLen sameLayout <tx frame hex> <rx frame hex>
+sameLayout is 0 when the send and receive ICDs differ, so only length and CRC apply.
 Usage: check_wire.py dump.txt
 """
 from __future__ import print_function
@@ -19,7 +20,7 @@ def main():
     checked = failed = 0
     with open(sys.argv[1]) as handle:
         for line in handle:
-            name, tx_len, rx_len, tx_hex, rx_hex = line.split()
+            name, tx_len, rx_len, same_layout, tx_hex, rx_hex = line.split()
             tx_len, rx_len = int(tx_len), int(rx_len)
             tx, rx = binascii.unhexlify(tx_hex), binascii.unhexlify(rx_hex)
             problems = []
@@ -31,7 +32,7 @@ def main():
                 problems.append("tx CRC wrong")
             if not crc_ok(rx):
                 problems.append("rx CRC wrong")
-            if rx[:rx_len] != tx[:rx_len]:
+            if same_layout == "1" and rx[:rx_len] != tx[:rx_len]:
                 problems.append("rx is not the start of tx")
             checked += 1
             if problems:

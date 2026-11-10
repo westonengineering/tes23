@@ -20,6 +20,11 @@ set LARGE="-p:IcdGeneratedDir=%ROOT%\tests\large\generated" "-p:OutDir=%ROOT%\bi
 "%MSBUILD%" native\IcdMatrixTests.vcxproj %COMMON% %LARGE% "-p:IntDir=%ROOT%\obj\large\IcdMatrixTests\\" || exit /b 1
 "%MSBUILD%" native\IcdLink.vcxproj %COMMON% %LARGE% "-p:IntDir=%ROOT%\obj\large\IcdLink\\" || exit /b 1
 
+python tools\icdgen.py tests\paired\project_paired.json --out tests\paired\generated > tests\paired\generator_report.txt || exit /b 1
+set PAIRED="-p:IcdGeneratedDir=%ROOT%\tests\paired\generated" "-p:OutDir=%ROOT%\bin\paired\\"
+"%MSBUILD%" native\IcdMatrixTests.vcxproj %COMMON% %PAIRED% "-p:IntDir=%ROOT%\obj\paired\IcdMatrixTests\\" || exit /b 1
+"%MSBUILD%" native\IcdLinkCli.vcxproj %COMMON% %PAIRED% "-p:IntDir=%ROOT%\obj\paired\IcdLinkCli\\" || exit /b 1
+
 set FAILED=0
 echo.
 echo === Normal ICD (Fake ICD on C, demo on D)
@@ -30,6 +35,18 @@ echo.
 echo === Fake large ICD (375 bytes sent, 275 returned)
 bin\large\IcdMatrixTests.exe bin\large\matrix_dump.txt || set FAILED=1
 python tests\check_wire.py bin\large\matrix_dump.txt || set FAILED=1
+
+echo.
+echo === Separate send and receive ICDs (different layouts, lengths and IDs)
+bin\paired\IcdMatrixTests.exe bin\paired\matrix_dump.txt || set FAILED=1
+python tests\check_wire.py bin\paired\matrix_dump.txt || set FAILED=1
+
+rem Hand-worked bytes. Sent 90 03 5A 34 12: Enable=1, Mode=Run, Level=0x5A, Speed=0x1234.
+rem The reply layout puts Level first, Mode next and Speed after, then Temp and a reserved byte.
+bin\paired\IcdLinkCli.exe open sim then begin then set ToC.Status.Enable 1 then set ToC.Status.Mode Run then set ToC.Status.Level 0x5A then set ToC.Status.Speed 0x1234 then end then send ToC.Status then expect FromC.Status.Level == 0x5A then expect FromC.Status.Mode == Run then expect FromC.Status.Speed == 0x1234 then expect FromC.Status.Temp == 0 > bin\paired\known.txt
+if errorlevel 1 set FAILED=1
+type bin\paired\known.txt
+findstr /C:"rx [91 5A 01 34 12 00 00]" bin\paired\known.txt > nul || (echo FAIL reply bytes differ from the hand-worked frame & set FAILED=1)
 
 echo.
 if %FAILED%==0 (echo ALL PASSED) else (echo FAILED)

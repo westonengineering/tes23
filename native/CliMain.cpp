@@ -160,17 +160,17 @@ private:
             p->msg = i;
             if (parts.size() == 3) {
                 const uint8_t dirBit = p->side == 0 ? DirTo : DirFrom;
+                bool otherDirection = false;
                 for (int f = 0; f < m.fieldCount; ++f) {
-                    if (EqualsNoCase(m.fields[f].name, parts[2])) {
-                        if (!(m.fields[f].dir & dirBit)) {
-                            out << "error: " << text << " does not exist in that direction\n";
-                            return false;
-                        }
+                    if (!EqualsNoCase(m.fields[f].name, parts[2])) continue;
+                    if (m.fields[f].dir & dirBit) {
                         p->field = f;
                         return true;
                     }
+                    otherDirection = true; // the same name may exist once per direction
                 }
-                out << "error: no field " << parts[2] << " in " << m.name << "\n";
+                if (otherDirection) out << "error: " << text << " does not exist in that direction\n";
+                else out << "error: no field " << parts[2] << " in " << m.name << "\n";
                 return false;
             }
             return true;
@@ -223,7 +223,7 @@ private:
             flat.insert(flat.end(), m_tx.begin() + m_txOff[i], m_tx.begin() + m_txOff[i] + m_schema.messages[i].txLen);
         }
         if (ids.empty()) return kPass;
-        const int s = IL_Commit(m_h, m_token, ids.data(), static_cast<int32_t>(ids.size()), flat.data(), &m_lastSeq);
+        const int s = IL_Commit(m_h, m_token, ids.data(), static_cast<int32_t>(ids.size()), flat.data(), nullptr);
         if (s != Ok) return Fail(s, out, "commit");
         std::fill(m_dirty.begin(), m_dirty.end(), false);
         return kPass;
@@ -467,8 +467,8 @@ private:
             uint32_t ms = 1000;
             if (a.size() > 1 && !ParseUInt(a[1], &ms)) { out << "usage: sync [timeoutMs]\n"; return kUsage; }
             if (m_token) { const int r = Publish(out); if (r != kPass) return r; }
-            uint64_t seq = m_lastSeq;
-            if (!m_token) IL_Snapshot(m_h, nullptr, nullptr, nullptr, &seq);
+            uint64_t seq = 0; // newest commit, including any made before this block
+            IL_Snapshot(m_h, nullptr, nullptr, nullptr, &seq);
             const int s = IL_WaitApplied(m_h, seq, ms);
             if (s != Ok) return Fail(s, out, "sync");
             if (m_token) RefreshAll();
@@ -545,7 +545,7 @@ private:
     const Schema& m_schema;
     IL_Handle m_h = nullptr;
     IL_ChannelConfig m_cfg[2];
-    uint64_t m_token = 0, m_lastSeq = 0;
+    uint64_t m_token = 0;
     std::vector<uint8_t> m_tx, m_rx;
     std::vector<uint32_t> m_txOff, m_rxOff;
     std::vector<bool> m_dirty;

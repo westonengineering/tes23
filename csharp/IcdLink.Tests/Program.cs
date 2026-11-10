@@ -159,6 +159,27 @@ internal static class Program
         }
     }
 
+    private static void SyncInLaterBlock()
+    {
+        Console.WriteLine("Sync in a block with no changes of its own waits for earlier commits");
+        using (var d = OpenFast())
+        {
+            d.StartCyclic(IcdChannel.C);
+            int stale = 0;
+            for (int i = 0; i < 50; i++)
+            {
+                byte value = (byte)((i % 30) + 1);
+                d.ToC.FakeIcd.Test3 = value;
+                d.Atomic(() =>
+                {
+                    d.Sync();
+                    if (d.FromC.FakeIcd.Test3 != value) stale++;
+                });
+            }
+            Check(stale == 0, "stale readings after Sync: " + stale);
+        }
+    }
+
     private static void RollbackAndNesting()
     {
         Console.WriteLine("exceptions discard uncommitted writes; nested blocks join");
@@ -303,6 +324,7 @@ internal static class Program
         Accessors();
         BlockIsAllOrNothing();
         SetCheckChange();
+        SyncInLaterBlock();
         RollbackAndNesting();
         GateTimeout();
         LongOperation();

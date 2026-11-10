@@ -428,7 +428,7 @@ namespace IcdLink
 
         private sealed class Txn
         {
-            public ulong Token, LastSeq;
+            public ulong Token;
             public byte[][] Tx, Rx;
             public IcdMsgMeta[] Meta;
             public bool[] Dirty;
@@ -631,7 +631,8 @@ namespace IcdLink
                 Buffer.BlockCopy(t.Tx[i], 0, flat, offset, Schema.Messages[i].TxLen);
                 offset += Schema.Messages[i].TxLen;
             }
-            Check(Native.IL_Commit(_h, t.Token, ids.ToArray(), ids.Count, flat, out t.LastSeq), "Commit");
+            ulong seq;
+            Check(Native.IL_Commit(_h, t.Token, ids.ToArray(), ids.Count, flat, out seq), "Commit");
             Array.Clear(t.Dirty, 0, t.Dirty.Length);
         }
 
@@ -654,16 +655,9 @@ namespace IcdLink
         public void Sync(int timeoutMs = DefaultSyncTimeoutMs)
         {
             var t = _txn.Value;
-            ulong seq;
-            if (t != null)
-            {
-                Publish(t);
-                seq = t.LastSeq;
-            }
-            else
-            {
-                Check(Native.IL_Snapshot(_h, null, null, null, out seq), "Snapshot");
-            }
+            if (t != null) Publish(t);
+            ulong seq;                  // newest commit, including any made before this block
+            Check(Native.IL_Snapshot(_h, null, null, null, out seq), "Snapshot");
             Check(Native.IL_WaitApplied(_h, seq, (uint)timeoutMs), "Sync");
             if (t != null) Load(t, false);
         }
