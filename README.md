@@ -3,6 +3,9 @@
 FT4232H (D2XX) and COM-port link with deterministic periodic traffic, generated
 C++/C# message code and a generated test GUI. Builds with MSVC, x64.
 
+Recipes for every common task, including EEPROM pauses, bit tests, MVVM binding and
+fault handling, are in [docs/HOWTO.md](docs/HOWTO.md).
+
 ## Requirements
 
 - Visual Studio 2022 or newer with the C++ desktop and .NET desktop workloads

@@ -10,8 +10,7 @@
     <NoWarn>$(NoWarn);CA1416</NoWarn>
     <ImplicitUsings>disable</ImplicitUsings>
     <ApplicationHighDpiMode>SystemAware</ApplicationHighDpiMode>
-    <OutputPath>..\..\bin\$(Configuration)\gui\$(TargetFramework)\</OutputPath>
-    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <OutputPath>..\..\bin\$(Configuration)\gui\</OutputPath>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\csharp\IcdLink.Net\IcdLink.Net.csproj" />

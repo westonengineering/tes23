@@ -145,6 +145,20 @@ namespace IcdLink
         public IcdTimeoutException(int status, string message) : base(status, message) { }
     }
 
+    public enum IcdLinkEventKind { RxTimeout, CrcError, WindowMiss, MissedSlot, IoError, EchoError, LongOpWatchdog }
+
+    /// <summary>Faults counted since the previous report for one channel and kind.</summary>
+    public sealed class IcdLinkEventArgs : EventArgs
+    {
+        public readonly IcdChannel Channel;
+        public readonly IcdLinkEventKind Kind;
+        public readonly ulong NewCount, Total;
+        public IcdLinkEventArgs(IcdChannel channel, IcdLinkEventKind kind, ulong newCount, ulong total)
+        {
+            Channel = channel; Kind = kind; NewCount = newCount; Total = total;
+        }
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     public struct IcdChannelConfig
     {
@@ -382,11 +396,28 @@ namespace IcdLink
     {
         private readonly IcdDeviceBase _device;
         private readonly IcdChannel _channel;
+        private readonly ulong _watchdogsAtStart;
         private int _ended;
-        internal IcdLongOperation(IcdDeviceBase device, IcdChannel channel) { _device = device; _channel = channel; }
+
+        internal IcdLongOperation(IcdDeviceBase device, IcdChannel channel, ulong watchdogsAtStart)
+        {
+            _device = device; _channel = channel; _watchdogsAtStart = watchdogsAtStart;
+        }
+
+        /// <summary>True if the watchdog ended this operation and periodic traffic has already restarted.</summary>
+        public bool WatchdogFired { get { return _device.GetStats(_channel).LongOpWatchdogs != _watchdogsAtStart; } }
+
+        /// <summary>Throws if the watchdog ended this operation. Call it between steps.</summary>
+        public void ThrowIfWatchdogFired()
+        {
+            if (WatchdogFired)
+                throw new IcdException(-7, "The long operation on channel " + _channel + " was ended by its watchdog. Periodic traffic has restarted.");
+        }
+
         public void Dispose()
         {
-            if (Interlocked.Exchange(ref _ended, 1) == 0) _device.EndLongOperation(_channel);
+            if (Interlocked.Exchange(ref _ended, 1) != 0) return;
+            if (!WatchdogFired) _device.EndLongOperation(_channel); // once expired, the channel may belong to a newer operation
         }
     }
 
@@ -413,6 +444,11 @@ namespace IcdLink
         private int _notifyBusy;
         private byte[] _lastTx, _lastRx;
         private IcdMsgMeta[] _lastMeta;
+        private IcdChannelStats[] _lastStats;
+
+        /// <summary>Link faults. Raised on the context that called StartNotifications, so
+        /// StartNotifications must be running for this to fire.</summary>
+        public event EventHandler<IcdLinkEventArgs> LinkEvent;
 
         protected IcdDeviceBase(IcdSchemaInfo schema)
         {
@@ -648,8 +684,9 @@ namespace IcdLink
         /// access. Send still works. If nothing happens for watchdogMs, traffic restarts.</summary>
         public IcdLongOperation BeginLongOperation(IcdChannel ch, int watchdogMs = 30000, int timeoutMs = DefaultSyncTimeoutMs)
         {
+            ulong watchdogs = GetStats(ch).LongOpWatchdogs;
             Check(Native.IL_LongOpBegin(_h, (int)ch, (uint)watchdogMs, (uint)timeoutMs), "BeginLongOperation");
-            return new IcdLongOperation(this, ch);
+            return new IcdLongOperation(this, ch, watchdogs);
         }
         internal void EndLongOperation(IcdChannel ch) { Check(Native.IL_LongOpEnd(_h, (int)ch), "EndLongOperation"); }
 
@@ -704,6 +741,7 @@ namespace IcdLink
         {
             StopNotifications();
             _notifyContext = SynchronizationContext.Current;
+            _lastStats = new[] { GetStats(IcdChannel.C), GetStats(IcdChannel.D) };
             _notifyTimer = new Timer(OnNotify, null, intervalMs, intervalMs);
         }
 
@@ -719,6 +757,7 @@ namespace IcdLink
             if (Interlocked.Exchange(ref _notifyBusy, 1) != 0) return;
             try
             {
+                ReportLinkEvents();
                 var tx = new byte[Schema.TxTotal];
                 var rx = new byte[Schema.RxTotal];
                 var meta = new IcdMsgMeta[Schema.Messages.Length];
@@ -750,6 +789,38 @@ namespace IcdLink
             {
                 Volatile.Write(ref _notifyBusy, 0);
             }
+        }
+
+        private void ReportLinkEvents()
+        {
+            var found = new List<IcdLinkEventArgs>();
+            foreach (IcdChannel ch in new[] { IcdChannel.C, IcdChannel.D })
+            {
+                IcdChannelStats now;
+                if (Native.IL_GetStats(_h, (int)ch, out now) != 0) continue;
+                var before = _lastStats[(int)ch];
+                _lastStats[(int)ch] = now;
+                AddEvent(found, ch, IcdLinkEventKind.RxTimeout, before.RxTimeouts, now.RxTimeouts);
+                AddEvent(found, ch, IcdLinkEventKind.CrcError, before.CrcErrors, now.CrcErrors);
+                AddEvent(found, ch, IcdLinkEventKind.WindowMiss, before.WindowMisses, now.WindowMisses);
+                AddEvent(found, ch, IcdLinkEventKind.MissedSlot, before.MissedSlots, now.MissedSlots);
+                AddEvent(found, ch, IcdLinkEventKind.IoError, before.IoErrors, now.IoErrors);
+                AddEvent(found, ch, IcdLinkEventKind.EchoError, before.EchoErrors, now.EchoErrors);
+                AddEvent(found, ch, IcdLinkEventKind.LongOpWatchdog, before.LongOpWatchdogs, now.LongOpWatchdogs);
+            }
+            if (found.Count == 0) return;
+            SendOrPostCallback raise = _ =>
+            {
+                var handler = LinkEvent;
+                if (handler != null) foreach (var e in found) handler(this, e);
+            };
+            if (_notifyContext != null) _notifyContext.Post(raise, null);
+            else raise(null);
+        }
+
+        private static void AddEvent(List<IcdLinkEventArgs> list, IcdChannel ch, IcdLinkEventKind kind, ulong before, ulong now)
+        {
+            if (now > before) list.Add(new IcdLinkEventArgs(ch, kind, now - before, now)); // lower means the counters were reset
         }
 
         private void Diff(IcdMsgInfo m, IcdSide side, byte[] now, byte[] before, int offset, List<KeyValuePair<IcdMessageView, string>> changes)

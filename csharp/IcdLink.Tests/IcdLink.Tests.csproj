@@ -8,8 +8,7 @@
     <Nullable>disable</Nullable>
     <NoWarn>$(NoWarn);CA1416</NoWarn>
     <ImplicitUsings>disable</ImplicitUsings>
-    <OutputPath>..\..\bin\$(Configuration)\tests\$(TargetFramework)\</OutputPath>
-    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <OutputPath>..\..\bin\$(Configuration)\tests\</OutputPath>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\IcdLink.Net\IcdLink.Net.csproj" />

@@ -254,6 +254,50 @@ internal static class Program
         }
     }
 
+    private static void WatchdogAndEvents()
+    {
+        Console.WriteLine("watchdog expiry and link events reach the application");
+        using (var d = OpenFast())
+        {
+            int watchdogEvents = 0, timeoutEvents = 0;
+            d.LinkEvent += (s, e) =>
+            {
+                if (e.Channel == IcdChannel.D && e.Kind == IcdLinkEventKind.LongOpWatchdog) Interlocked.Add(ref watchdogEvents, (int)e.NewCount);
+                if (e.Channel == IcdChannel.C && e.Kind == IcdLinkEventKind.RxTimeout) Interlocked.Add(ref timeoutEvents, (int)e.NewCount);
+            };
+            d.StartNotifications(10);
+
+            d.StartCyclic(IcdChannel.D);
+            var healthy = d.BeginLongOperation(IcdChannel.D, 5000);
+            Check(!healthy.WatchdogFired, "fresh operation is not expired");
+            healthy.ThrowIfWatchdogFired();
+            healthy.Dispose();
+
+            var expired = d.BeginLongOperation(IcdChannel.D, 100);
+            ulong paused = d.GetStats(IcdChannel.D).TxFrames;
+            Thread.Sleep(300);
+            Check(expired.WatchdogFired, "expiry is visible to the owner");
+            Throws<IcdException>(() => expired.ThrowIfWatchdogFired(), "ThrowIfWatchdogFired after expiry");
+            Check(d.GetStats(IcdChannel.D).TxFrames > paused + 5, "periodic traffic restarted");
+
+            var newer = d.BeginLongOperation(IcdChannel.D, 5000);
+            expired.Dispose();                                     // must not end the newer operation
+            ulong held = d.GetStats(IcdChannel.D).TxFrames;
+            Thread.Sleep(50);
+            Check(d.GetStats(IcdChannel.D).TxFrames == held, "disposing an expired operation leaves a newer one alone");
+            newer.Dispose();
+
+            d.SetSimFaults(IcdChannel.C, 5, 0);
+            d.StartCyclic(IcdChannel.C);
+            Thread.Sleep(150);
+            d.StopCyclic(IcdChannel.C);
+            Thread.Sleep(50);
+            d.StopNotifications();
+            Check(watchdogEvents == 1, "one watchdog event, got " + watchdogEvents);
+            Check(timeoutEvents > 0 && (ulong)timeoutEvents == d.GetStats(IcdChannel.C).RxTimeouts, "timeout events match the counter, got " + timeoutEvents);
+        }
+    }
+
     private static int Main()
     {
         Accessors();
@@ -263,6 +307,7 @@ internal static class Program
         GateTimeout();
         LongOperation();
         Notifications();
+        WatchdogAndEvents();
         Console.WriteLine();
         Console.WriteLine(_checks + " checks, " + _failures + " failed (" + System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription + ")");
         return _failures;
