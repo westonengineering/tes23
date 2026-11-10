@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <IcdRoot>$(MSBuildThisFileDirectory)..\</IcdRoot>
+    <IcdGeneratedDir Condition="'$(IcdGeneratedDir)'==''">$(IcdRoot)generated</IcdGeneratedDir>
+    <OutDir>$(IcdRoot)bin\$(Configuration)\</OutDir>
+    <IntDir>$(IcdRoot)obj\$(MSBuildProjectName)\$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(IcdRoot)native;$(IcdGeneratedDir);$(IcdRoot)third_party\ftd2xx;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <ConformanceMode>true</ConformanceMode>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;WIN32_LEAN_AND_MEAN;NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <AdditionalLibraryDirectories>$(IcdRoot)third_party\ftd2xx\amd64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>ftd2xx.lib;delayimp.lib;winmm.lib;Synchronization.lib;advapi32.lib;kernel32.lib;user32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <DelayLoadDLLs>ftd2xx.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
+    <ClCompile>
+      <Optimization>MaxSpeed</Optimization>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <OptimizeReferences>true</OptimizeReferences>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="$(IcdRoot)native\IcdSchema.cpp" />
+    <ClCompile Include="$(IcdRoot)native\Ftdi4232H.cpp" />
+    <ClCompile Include="$(IcdRoot)native\SerialCom.cpp" />
+    <ClCompile Include="$(IcdRoot)native\SimDevice.cpp" />
+    <ClCompile Include="$(IcdRoot)native\LinkEngine.cpp" />
+    <ClCompile Include="$(IcdRoot)native\IcdLinkApi.cpp" />
+    <ClCompile Include="$(IcdGeneratedDir)\IcdMessages.cpp" />
+  </ItemGroup>
+</Project>

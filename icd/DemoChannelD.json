@@ -1,0 +1,26 @@
+{
+  "_comment": "PLACEHOLDER for channel D, invented to exercise signed, scaled, float, enum and omitted fields. Replace it with the real channel D ICD.",
+  "messages": [
+    {
+      "name": "Telemetry",
+      "id": "0x91",
+      "fields": [
+        { "byte": "2",   "bits": "0",   "desc": "Enable" },
+        { "byte": "2",   "bits": "3-1", "desc": "Mode", "enum": "0=Idle,1=Run,2=Fault" },
+        { "byte": "2",   "bits": "7-4", "desc": "Reserved" },
+        { "byte": "3-4", "desc": "TempC", "type": "int16", "scale": 0.1, "unit": "C" },
+        { "byte": "5-8", "desc": "Gain", "type": "float", "default": 1.5 },
+        { "byte": "9",   "desc": "CommandOnly", "dir": "to" }
+      ]
+    },
+    {
+      "name": "EepromWrite",
+      "id": "0xA0",
+      "cyclic": false,
+      "fields": [
+        { "byte": "2-3", "desc": "Address", "type": "uint16" },
+        { "byte": "4",   "desc": "Value" }
+      ]
+    }
+  ]
+}

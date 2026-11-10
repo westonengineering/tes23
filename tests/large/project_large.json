@@ -1,0 +1,14 @@
+{
+  "_comment": "Test only. 921600 baud because 658 bytes per exchange takes 63 ms at 115200.",
+  "byte_base": 1,
+  "endianness": "little",
+  "crc": {
+    "poly": "0x04C11DB7", "init": "0xFFFFFFFF", "xorout": "0xFFFFFFFF",
+    "reflect_in": true, "reflect_out": true, "byte_order": "little", "covers_type": true
+  },
+  "channels": {
+    "C": { "baud": 921600, "period_us": 20000, "window_us": 1000, "rx_timeout_us": 18000, "trailer_ff": false, "rs485_echo": false },
+    "D": { "baud": 921600, "period_us": 20000, "window_us": 1000, "rx_timeout_us": 18000, "trailer_ff": false, "rs485_echo": false }
+  },
+  "sources": [ { "file": "fake_large_icd.txt" } ]
+}

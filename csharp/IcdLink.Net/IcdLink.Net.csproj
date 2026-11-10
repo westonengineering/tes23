@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net48;net10.0-windows</TargetFrameworks>
+    <LangVersion>7.3</LangVersion>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <RootNamespace>IcdLink</RootNamespace>
+    <AssemblyName>IcdLink.Net</AssemblyName>
+    <Nullable>disable</Nullable>
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+    <ImplicitUsings>disable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\..\generated\IcdMessages.g.cs" Link="IcdMessages.g.cs" />
+  </ItemGroup>
+</Project>

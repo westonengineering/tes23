@@ -1,0 +1,7 @@
+Byte	Bits	Desc
+2	0	Power
+	4-1	Test4
+	7-5	Reserved
+3	3-0	Test1
+4	7-4	Test2
+5	4-0	Test3
